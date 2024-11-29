@@ -5,6 +5,8 @@ VisualStudioVersion = 17.11.35208.52
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LoginService", "LoginService.csproj", "{B501B69E-498C-4856-9787-AEEE0478FFD0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DisplayService", "..\DisplayService\DisplayService.csproj", "{0698068D-FF4E-4DCE-BF78-CFC9EF82B7FD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{B501B69E-498C-4856-9787-AEEE0478FFD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B501B69E-498C-4856-9787-AEEE0478FFD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B501B69E-498C-4856-9787-AEEE0478FFD0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0698068D-FF4E-4DCE-BF78-CFC9EF82B7FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0698068D-FF4E-4DCE-BF78-CFC9EF82B7FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0698068D-FF4E-4DCE-BF78-CFC9EF82B7FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0698068D-FF4E-4DCE-BF78-CFC9EF82B7FD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

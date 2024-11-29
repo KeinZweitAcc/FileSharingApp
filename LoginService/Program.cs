@@ -2,10 +2,12 @@
 using LoginService.Database.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
-using System.Text;
+using System.Text.Json;
+using System.Net.Http;
 
 namespace LoginService
 {
@@ -15,6 +17,10 @@ namespace LoginService
 
         static async Task Main(string[] args)
         {
+            //Das Löschen vom User muss noch richtig gefixt werden
+
+
+
             var serviceCollection = new ServiceCollection();
             ConfigureServices(serviceCollection);
 
@@ -24,7 +30,6 @@ namespace LoginService
             // Ensure database is created and apply migrations
             try
             {
-                // Ensure database is created and apply migrations
                 dataContext.Database.Migrate();
                 Console.WriteLine("Datenbankmigrationen erfolgreich angewendet.");
             }
@@ -121,12 +126,12 @@ namespace LoginService
             {
                 dataContext.Users.Add(user);
                 await dataContext.SaveChangesAsync();
+                await SendingListToDisplayService(dataContext);
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Fehler beim Speichern des Benutzers: " + ex.Message);
             }
-
         }
 
         private static async Task DeleteUserByIp(string ip, DataContext dataContext)
@@ -137,7 +142,7 @@ namespace LoginService
                 dataContext.Users.Remove(user);
                 await dataContext.SaveChangesAsync();
                 Console.WriteLine($"Benutzer mit IP {ip} wurde gelöscht.");
-
+                await SendingListToDisplayService(dataContext);
             }
         }
 
@@ -145,6 +150,27 @@ namespace LoginService
         {
             services.AddDbContext<DataContext>(options =>
                 options.UseSqlite("Data Source=UserLog.db"));
+        }
+
+        private static async Task SendingListToDisplayService(DataContext dataContext)
+        {
+            var post_data = await dataContext.Users.ToListAsync();
+            string uri = "http://localhost:5000/Display/";
+
+            using (var httpClient = new HttpClient())
+            {
+                var jsonContent = new StringContent(JsonSerializer.Serialize(post_data), Encoding.UTF8, "application/json");
+                var response = await httpClient.PostAsync(uri, jsonContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("Daten erfolgreich an DisplayService gesendet.");
+                }
+                else
+                {
+                    Console.WriteLine($"Fehler beim Senden der Daten: {response.StatusCode}");
+                }
+            }
         }
     }
 }

@@ -22,7 +22,16 @@ namespace LoginService
             var dataContext = serviceProvider.GetRequiredService<DataContext>();
 
             // Ensure database is created and apply migrations
-            dataContext.Database.Migrate();
+            try
+            {
+                // Ensure database is created and apply migrations
+                dataContext.Database.Migrate();
+                Console.WriteLine("Datenbankmigrationen erfolgreich angewendet.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Fehler bei der Anwendung der Datenbankmigrationen: {ex.Message}");
+            }
 
             var httpListener = new HttpListener();
             httpListener.Prefixes.Add("http://localhost:5000/login/");
@@ -108,8 +117,16 @@ namespace LoginService
                 Username = Username
             };
 
-            dataContext.Users.Add(user);
-            await dataContext.SaveChangesAsync();
+            try
+            {
+                dataContext.Users.Add(user);
+                await dataContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Fehler beim Speichern des Benutzers: " + ex.Message);
+            }
+
         }
 
         private static async Task DeleteUserByIp(string ip, DataContext dataContext)
@@ -120,6 +137,7 @@ namespace LoginService
                 dataContext.Users.Remove(user);
                 await dataContext.SaveChangesAsync();
                 Console.WriteLine($"Benutzer mit IP {ip} wurde gelöscht.");
+
             }
         }
 

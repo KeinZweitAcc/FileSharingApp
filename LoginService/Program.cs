@@ -14,13 +14,12 @@ namespace LoginService
     internal class Program
     {
         private static readonly ConcurrentDictionary<string, WebSocket> WebSocketConnections = new();
+        private static readonly HttpClient httpClient = new HttpClient(); // Reuse HttpClient instance
+
+        private record ConnectedUser(string UserName, string Ip, int Port);
 
         static async Task Main(string[] args)
         {
-            //Das Löschen vom User muss noch richtig gefixt werden
-
-
-
             var serviceCollection = new ServiceCollection();
             ConfigureServices(serviceCollection);
 
@@ -50,8 +49,9 @@ namespace LoginService
                 if (context.Request.IsWebSocketRequest)
                 {
                     var webSocketContext = await context.AcceptWebSocketAsync(null);
+
                     Console.WriteLine("Neue WebSocket-Verbindung akzeptiert");
-                    _ = HandleWebSocketConnection(webSocketContext.WebSocket, dataContext);
+                    _ = HandleWebSocketConnection(webSocketContext.WebSocket, dataContext, context);
                 }
                 else
                 {
@@ -62,10 +62,11 @@ namespace LoginService
             }
         }
 
-        private static async Task HandleWebSocketConnection(WebSocket webSocket, DataContext dataContext)
+        private static async Task HandleWebSocketConnection(WebSocket webSocket, DataContext dataContext,
+                                                            HttpListenerContext context)
         {
             var buffer = new byte[1024 * 4];
-            string userIp = null;
+            string message = null;
 
             while (webSocket.State == WebSocketState.Open)
             {
@@ -73,60 +74,73 @@ namespace LoginService
 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    Console.WriteLine($"Nachricht empfangen: {message}");
+                    message = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
-                    var response = await ProcessMessage(message, dataContext);
-                    userIp = message.Split(",")[0].Trim(); // Speichere die IP-Adresse des Benutzers
+                    // Deserialize the client registration message
+                    var parts = message.Split(';');
+                    if (parts.Length == 2 && parts[0] == "clientRegistration")
+                    {
+                        var clientInfo = JsonSerializer.Deserialize<ConnectedUser>(parts[1]);
 
-                    var encodedResponse = Encoding.UTF8.GetBytes(response);
-                    await webSocket.SendAsync(new ArraySegment<byte>(encodedResponse), WebSocketMessageType.Text, true, CancellationToken.None);
+                        if (clientInfo != null)
+                        {
+                            try
+                            {
+                                if (dataContext.Users.Any(x => x.Ip == clientInfo.Ip))
+                                {
+                                    throw new Exception("User schon angemeldet.");
+                                }
+
+                                await InsertUser(clientInfo, dataContext);
+                                await SendUserListToDisplayService(dataContext);
+                            }
+                            catch (Exception ex)
+                            {
+                                context.Response.StatusCode = 400;
+                                context.Response.Close();
+                                Console.WriteLine(
+                                    $"Verbindung nicht möglich, User schon belegt oder Fehler: {ex.Message}");
+                                continue;
+                            }
+                        }
+                    }
                 }
                 else if (result.MessageType == WebSocketMessageType.Close)
                 {
                     Console.WriteLine("WebSocket-Verbindung geschlossen.");
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Schließen bestätigt", CancellationToken.None);
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Schließen bestätigt",
+                        CancellationToken.None);
 
-                    if (userIp != null)
+                    if (message != null)
                     {
-                        await DeleteUserByIp(userIp, dataContext);
+                        var parts = message.Split(';');
+                        if (parts.Length == 2 && parts[0] == "clientRegistration")
+                        {
+                            var clientInfo = JsonSerializer.Deserialize<ConnectedUser>(parts[1]);
+                            if (clientInfo != null)
+                            {
+                                await DeleteUserByIp(clientInfo.Ip, dataContext);
+                                await SendUserListToDisplayService(dataContext);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        private static async Task<string> ProcessMessage(string message, DataContext dataContext)
-        {
-            var parts = message.Split(",")
-                .Select(x => x.Trim()).ToArray();
-
-            var Ip = parts[0];
-            var Port = parts[1];
-            var Username = parts[2];
-
-            Console.WriteLine($"Gegebene Parameter wurden verarbeitet | IP: {Ip}, Port: {Port}, Username: {Username}");
-
-            int portToUse = Convert.ToInt32(Port);
-
-            await InsertUser(Ip, portToUse, Username, dataContext);
-
-            return $"Gegebene Parameter wurden verarbeitet | IP: {Ip}, Port: {Port}, Username: {Username}";
-        }
-
-        private static async Task InsertUser(string Ip, int Port, string Username, DataContext dataContext)
+        private static async Task InsertUser(ConnectedUser connectedUser, DataContext dataContext)
         {
             var user = new User
             {
-                Ip = Ip,
-                Port = Port,
-                Username = Username
+                Ip = connectedUser.Ip,
+                Port = connectedUser.Port,
+                Username = connectedUser.UserName
             };
 
             try
             {
                 dataContext.Users.Add(user);
                 await dataContext.SaveChangesAsync();
-                await SendingListToDisplayService(dataContext);
             }
             catch (Exception ex)
             {
@@ -142,34 +156,35 @@ namespace LoginService
                 dataContext.Users.Remove(user);
                 await dataContext.SaveChangesAsync();
                 Console.WriteLine($"Benutzer mit IP {ip} wurde gelöscht.");
-                await SendingListToDisplayService(dataContext);
             }
         }
 
         private static void ConfigureServices(IServiceCollection services)
         {
-            services.AddDbContext<DataContext>(options =>
-                options.UseSqlite("Data Source=UserLog.db"));
+            services.AddDbContext<DataContext>(options => options.UseSqlite("Data Source=UserLog.db"));
         }
 
-        private static async Task SendingListToDisplayService(DataContext dataContext)
+        private static async Task SendUserListToDisplayService(DataContext dataContext)
         {
-            var post_data = await dataContext.Users.ToListAsync();
-            string uri = "http://localhost:5000/Display/";
-
-            using (var httpClient = new HttpClient())
+            var users = await dataContext.Users.ToListAsync();
+            var userList = users.Select(u => new
             {
-                var jsonContent = new StringContent(JsonSerializer.Serialize(post_data), Encoding.UTF8, "application/json");
-                var response = await httpClient.PostAsync(uri, jsonContent);
+                Name = u.Username,
+                IpAddress = u.Ip,
+                Port = u.Port
+            }).ToList();
 
-                if (response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine("Daten erfolgreich an DisplayService gesendet.");
-                }
-                else
-                {
-                    Console.WriteLine($"Fehler beim Senden der Daten: {response.StatusCode}");
-                }
+            string uriDisplayServiceDisplay = "http://localhost:5000/Display/";
+            var jsonContent = new StringContent(JsonSerializer.Serialize(userList), Encoding.UTF8, "application/json");
+            var response = await httpClient.PostAsync(uriDisplayServiceDisplay, jsonContent);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Daten erfolgreich an DisplayService gesendet.");
+            }
+            else
+            {
+                Console.WriteLine($"Fehler beim Senden der Daten: {response.StatusCode}");
             }
         }
     }

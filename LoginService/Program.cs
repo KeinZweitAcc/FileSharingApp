@@ -62,16 +62,44 @@ namespace LoginService
             }
         }
 
-        private static async Task HandleWebSocketConnection(WebSocket webSocket, DataContext dataContext,
-                                                            HttpListenerContext context)
+        public record RegisterData(string Name, string IpAddress, int Port);
+        private static void RegisterClient(string client)
+        {
+            RegisterData receivedClient = JsonSerializer.Deserialize<RegisterData>(client);
+            Console.WriteLine($"Client \"{receivedClient.Name}\" hat sich angemeldet. Client-Verbindung: {receivedClient.IpAddress}:{receivedClient.Port}");
+
+            //HIER BENUTZER IN DATENBANK EINFÜGEN
+
+            // DAS HTTP-DING OBEN WIRD NICHT MEHR BENÖTIGT, WENN WIR WEBSOCKETS VERWENDEN. IMPLEMENTIERT EIN GATEWAY, DAMIT DER CLIENT NUR EINE ADRESSE KENNEN MUSS, Z. B.: "WS://LOCALHOST:5000/FSA".
+        }
+
+        private static async Task HandleWebSocketConnection(WebSocket webSocket, DataContext dataContext, HttpListenerContext context)
         {
             var buffer = new byte[1024 * 4];
-            string message = null;
 
             while (webSocket.State == WebSocketState.Open)
             {
                 var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
 
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    string receivedMessage = Encoding.UTF8.GetString(buffer, 0, result.Count); // Convert buffer to string
+                    string[] message = receivedMessage.Split(';');
+
+                    switch (message[0])
+                    {
+                        case "clientRegistration": RegisterClient(message[1]);
+                            break;
+                    }
+                }
+                else if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by server", CancellationToken.None);
+                }
+
+                //KEINE AHNUNG WAS IHR HIER UNTEN GEKOCHT HABT, MÜSST IHR SELBER SCHAUEN WIE UND WO IHR DAS VERWENDET. HABS VORERST AUSKOMMENTIERT.
+
+                /*
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     message = Encoding.UTF8.GetString(buffer, 0, result.Count);
@@ -124,7 +152,7 @@ namespace LoginService
                             }
                         }
                     }
-                }
+                }*/
             }
         }
 
